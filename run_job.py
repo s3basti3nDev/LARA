@@ -17,7 +17,7 @@ train.py \
 """
 # ─────────────────────────────────────────────────────────────────────────────
 
-ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lara")
+ROOT = os.path.dirname(os.path.abspath(__file__))
 args = CMD.replace("\\\n", " ").split()
 args[0] = os.path.join(ROOT, args[0])
 

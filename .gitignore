@@ -10,12 +10,12 @@ __pycache__/
 *.pyo
 
 # Données FineWeb téléchargées
-lara/data/fineweb*/
-lara/data/*.bin
+data/fineweb*/
+data/*.bin
 
 # Résultats locaux
-lara/results/
-lara/checkpoints/
+results/
+checkpoints/
 
 # VS Code
 .vscode/
