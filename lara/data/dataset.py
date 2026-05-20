@@ -55,23 +55,25 @@ def prepare_shakespeare(data_dir: str = "data"):
 # FineWeb-Edu (HuggingFace — 10B token subset, high quality)
 # ──────────────────────────────────────────────────────────────
 
-def prepare_fineweb(data_dir: str = "data", sample: str = "sample-10BT"):
+def prepare_fineweb(data_dir: str = "data", sample: str = "sample-10BT",
+                    max_train_tokens: int = 500_000_000):
     """
     Download and tokenize FineWeb-Edu from HuggingFace.
     Requires: pip install datasets tiktoken
-    Uses the 10B-token sample by default (~20GB download).
-    For a quick test, pass sample='sample-350BT' (smaller) — actually use
-    'sample-10BT' for the 10B version.
+    Streams up to max_train_tokens train tokens (default 500M ≈ 3 min on Colab T4).
+    Pass max_train_tokens=0 to stream the full dataset.
     """
     os.makedirs(data_dir, exist_ok=True)
-    train_path = os.path.join(data_dir, f"fineweb_{sample}_train.bin")
-    val_path   = os.path.join(data_dir, f"fineweb_{sample}_val.bin")
+    suffix = f"_{max_train_tokens//1_000_000}M" if max_train_tokens else "_full"
+    train_path = os.path.join(data_dir, f"fineweb_{sample}{suffix}_train.bin")
+    val_path   = os.path.join(data_dir, f"fineweb_{sample}{suffix}_val.bin")
 
     if os.path.exists(train_path) and os.path.exists(val_path):
-        print("FineWeb-Edu déjà préparé.")
+        print(f"FineWeb-Edu déjà préparé ({os.path.getsize(train_path)//1_000_000}MB train).")
         return train_path, val_path
 
-    print(f"Téléchargement FineWeb-Edu ({sample}) depuis HuggingFace...")
+    lim = max_train_tokens if max_train_tokens else float("inf")
+    print(f"Téléchargement FineWeb-Edu ({sample}, cap={lim/1e6:.0f}M train tokens)...")
     from datasets import load_dataset
     import tiktoken
 
@@ -86,7 +88,6 @@ def prepare_fineweb(data_dir: str = "data", sample: str = "sample-10BT"):
         ids.append(eot)
         return ids
 
-    # Stream and write train / val (.bin)
     val_tokens = 10_000_000   # ~10M tokens for validation
     train_tokens_written = 0
     val_tokens_written   = 0
@@ -103,12 +104,14 @@ def prepare_fineweb(data_dir: str = "data", sample: str = "sample-10BT"):
         else:
             arr.tofile(train_f)
             train_tokens_written += len(ids)
-        if train_tokens_written % 100_000_000 == 0 and train_tokens_written > 0:
-            print(f"  {train_tokens_written/1e9:.1f}B train tokens written...")
+        if train_tokens_written % 50_000_000 == 0 and train_tokens_written > 0:
+            print(f"  {train_tokens_written/1e6:.0f}M train tokens written...", flush=True)
+        if train_tokens_written >= lim:
+            break
 
     train_f.close()
     val_f.close()
-    print(f"  train: {train_tokens_written/1e9:.2f}B tokens  |  val: {val_tokens_written/1e6:.1f}M tokens")
+    print(f"  train: {train_tokens_written/1e6:.0f}M tokens  |  val: {val_tokens_written/1e6:.1f}M tokens")
     return train_path, val_path
 
 
