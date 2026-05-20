@@ -1,0 +1,30 @@
+# Checkpoints et données binaires (trop lourds pour GitHub)
+*.pt
+*.ckpt
+*.bin
+*.safetensors
+
+# Cache Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Données FineWeb téléchargées
+lara/data/fineweb*/
+lara/data/*.bin
+
+# Résultats locaux
+lara/results/
+lara/checkpoints/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Windows
+desktop.ini
+Thumbs.db
+
+# Environnements
+.env
+*.egg-info/

@@ -1,0 +1,37 @@
+Ce qu'est LARA en mots simples
+Le point de départ : un GPT standard
+Un modèle de langage classique (comme GPT-2) fonctionne comme ça : on lui donne du texte, chaque mot "regarde" tous les autres via un mécanisme appelé attention, puis un petit réseau de neurones traite l'information, et on passe à la couche suivante. C'est le baseline.
+
+Le problème : pour égaler GPT-4, il faut soit un modèle énorme (des milliards de paramètres), soit être plus malin avec les mêmes paramètres.
+
+LARA choisit la deuxième voie. Il empile des briques — chacune est une idée d'une publication récente qui améliore un aspect précis.
+
+Les briques construites
+Brique 1a — Attention différentielle (ICLR 2025)
+
+Le modèle calcule l'attention deux fois et fait la différence. Ça annule le "bruit de fond" et force le modèle à se concentrer sur ce qui compte vraiment dans le contexte.
+
+Brique 1b — MLA (DeepSeek V3)
+
+Au lieu de stocker toute la mémoire de contexte (les "clés/valeurs"), on la compresse dans un espace 16× plus petit. Résultat : le modèle peut gérer des contextes bien plus longs pour le même coût mémoire.
+
+Brique 2 — Récursion (NeurIPS 2025)
+
+Au lieu d'avoir 12 couches différentes, on en a 6 qu'on réutilise plusieurs fois (partage de poids). Les tokens "faciles" passent moins de fois, les "difficiles" plus. C'est comme relire un paragraphe quand c'est compliqué. Bonus : à l'inférence, on peut faire encore plus de passages qu'à l'entraînement — le modèle devient plus "intelligent" sans réentraînement.
+
+Brique 3 — Coconut (Meta FAIR)
+
+Avant de répondre, le modèle fait des "passes de réflexion" internes — pas en mots, mais en vecteurs continus. C'est du raisonnement latent, comme penser avant de parler. Le curriculum démarre à zéro (pas de réflexion) et augmente progressivement pendant l'entraînement.
+
+Brique 4 — Titans (Google)
+
+Une mémoire externe persistante (512 slots) que le modèle met à jour à chaque forward pass. Elle lui permet de "se souvenir" d'informations au-delà de la fenêtre de contexte — contexte quasi-infini à coût constant.
+
+La stratégie d'ensemble
+
+baseline → +DiffAttn → +Récursion → +Coconut → +Titans → lara_full
+                                                           
+           lara_v2 = MLA + Récursion + Titans  ← run en cours
+Chaque brique est indépendante et mesurable : on peut activer ou désactiver chacune et mesurer son apport exact sur la perplexité. C'est l'ablation.
+
+L'idée centrale : atteindre la qualité d'un grand modèle sans avoir ses milliards de paramètres, en étant plus efficace sur l'attention, la mémoire et le raisonnement.
