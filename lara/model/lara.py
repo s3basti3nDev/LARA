@@ -73,9 +73,9 @@ class LARA(nn.Module):
         super().__init__()
         self.config = config
 
-        # Token + positional embeddings
+        # Token embeddings (+ absolute positional unless use_rope=True)
         self.wte = nn.Embedding(config.vocab_size, config.n_embd)
-        self.wpe = nn.Embedding(config.block_size, config.n_embd)
+        self.wpe = None if config.use_rope else nn.Embedding(config.block_size, config.n_embd)
         self.embed_drop = nn.Dropout(config.dropout)
 
         # ── Brique 2: Mixture of Recursions / Recurrent Depth ─
@@ -154,9 +154,10 @@ class LARA(nn.Module):
 
     # ──────────────────────────────────────────────────────────
     def _embed(self, idx: torch.Tensor) -> torch.Tensor:
-        B, T = idx.shape
-        pos = torch.arange(T, device=idx.device)
-        return self.embed_drop(self.wte(idx) + self.wpe(pos))
+        x = self.wte(idx)
+        if self.wpe is not None:
+            x = x + self.wpe(torch.arange(idx.shape[1], device=idx.device))
+        return self.embed_drop(x)
 
     # ──────────────────────────────────────────────────────────
     def _run_transformer(self, x: torch.Tensor,

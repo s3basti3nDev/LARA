@@ -10,6 +10,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from .rope import RotaryEmbedding
 
 
 class DifferentialAttention(nn.Module):
@@ -62,6 +63,9 @@ class DifferentialAttention(nn.Module):
         self.attn_drop = nn.Dropout(config.dropout)
         self.resid_drop = nn.Dropout(config.dropout)
 
+        self.rope = RotaryEmbedding(self.head_dim, config.block_size) \
+            if getattr(config, "use_rope", False) else None
+
         self.register_buffer(
             "causal_mask",
             torch.tril(torch.ones(config.block_size, config.block_size))
@@ -87,6 +91,10 @@ class DifferentialAttention(nn.Module):
 
         Q1, Q2 = Q.chunk(2, dim=-1)  # each (B, n_head, T, head_dim)
         K1, K2 = K.chunk(2, dim=-1)
+
+        if self.rope is not None:
+            Q1, K1 = self.rope(Q1, K1)
+            Q2, K2 = self.rope(Q2, K2)
 
         # Causal attention maps
         def masked_softmax(q, k):

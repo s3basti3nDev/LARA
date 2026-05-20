@@ -49,7 +49,12 @@ class ModelConfig:
     dca_compress: int = 0   # 0 = auto = n_embd // 8
     dca_n_head: int = 4
 
-    # --- Brique 5 : BitNet 1.58 (Microsoft, 2025) ---
+    # --- Brique 5 : RoPE - Rotary Position Embeddings (Su et al. 2021) ---
+    # Replaces absolute wpe; position injected directly into Q/K in each attn layer.
+    # Compatible with MLA and DiffAttn. Incompatible with baseline (CausalSelfAttn).
+    use_rope: bool = False
+
+    # --- Brique 6 : BitNet 1.58 (Microsoft, 2025) ---
     use_bitnet: bool = False
 
 
@@ -161,6 +166,22 @@ def lara_v2_dca_config() -> tuple[ModelConfig, TrainConfig]:
         memory_size=512,
     )
     t = TrainConfig(run_name="exp_h_lara_v2_dca")
+    return m, t
+
+
+def lara_v2_rope_config() -> tuple[ModelConfig, TrainConfig]:
+    """LARA v2 + DCA + RoPE — replaces absolute wpe with rotary embeddings."""
+    m = ModelConfig(
+        use_mla=True,
+        use_recurrent_depth=True,
+        use_titans=True,
+        use_dca=True,
+        use_rope=True,
+        n_layer=6,
+        n_recursions=4,
+        memory_size=512,
+    )
+    t = TrainConfig(run_name="exp_i_lara_v2_rope")
     return m, t
 
 

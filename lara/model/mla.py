@@ -21,6 +21,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from .rope import RotaryEmbedding
 
 
 class MultiHeadLatentAttention(nn.Module):
@@ -66,6 +67,9 @@ class MultiHeadLatentAttention(nn.Module):
         self.attn_drop  = nn.Dropout(config.dropout)
         self.resid_drop = nn.Dropout(config.dropout)
 
+        self.rope = RotaryEmbedding(self.head_dim, config.block_size) \
+            if getattr(config, "use_rope", False) else None
+
         self.register_buffer(
             "causal_mask",
             torch.tril(torch.ones(config.block_size, config.block_size))
@@ -90,6 +94,9 @@ class MultiHeadLatentAttention(nn.Module):
         # RMSNorm per head — stabilises long sequences (DeepSeek trick)
         q = self.norm_q(q)
         k = self.norm_k(k)
+
+        if self.rope is not None:
+            q, k = self.rope(q, k)
 
         # ── Causal self-attention ──────────────────────────────────────
         # Use fused SDPA when no dropout (faster on GPU, memory-efficient)

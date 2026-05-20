@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from config import (
     baseline_config, diff_attn_config, mor_config,
     coconut_config, lara_full_config, lara_v2_config, lara_v2_full_config,
-    lara_v2_dca_config,
+    lara_v2_dca_config, lara_v2_rope_config,
     TrainConfig,
 )
 from model.baseline import GPT
@@ -47,6 +47,7 @@ EXPERIMENTS = {
     "lara_v2":       (lara_v2_config,      LARA),  # MLA + RecurrentDepth + Titans
     "lara_v2_full":  (lara_v2_full_config, LARA),  # + Coconut (deferred)
     "lara_v2_dca":   (lara_v2_dca_config,  LARA),  # + DCA (Brique 2c)
+    "lara_v2_rope":  (lara_v2_rope_config, LARA),  # + RoPE (Brique 5)
 }
 
 
