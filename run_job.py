@@ -21,4 +21,4 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 args = CMD.replace("\\\n", " ").split()
 args[0] = os.path.join(ROOT, args[0])
 
-subprocess.run([sys.executable] + args, check=True)
+subprocess.run([sys.executable] + args, check=True, cwd=ROOT)
