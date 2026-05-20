@@ -72,6 +72,13 @@ def prepare_fineweb(data_dir: str = "data", sample: str = "sample-10BT",
         print(f"FineWeb-Edu déjà préparé ({os.path.getsize(train_path)//1_000_000}MB train).")
         return train_path, val_path
 
+    # Fallback: anciens fichiers sans suffixe (disque persistant Lightning.ai)
+    old_train = os.path.join(data_dir, f"fineweb_{sample}_train.bin")
+    old_val   = os.path.join(data_dir, f"fineweb_{sample}_val.bin")
+    if os.path.exists(old_train) and os.path.exists(old_val):
+        print(f"FineWeb-Edu (fichiers existants, {os.path.getsize(old_train)//1_000_000}MB train).")
+        return old_train, old_val
+
     lim = max_train_tokens if max_train_tokens else float("inf")
     print(f"Téléchargement FineWeb-Edu ({sample}, cap={lim/1e6:.0f}M train tokens)...")
     from datasets import load_dataset
