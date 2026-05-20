@@ -149,8 +149,9 @@ def main():
     grad_accum = args.grad_accum
 
     device = tc.device
+    print(f"[LARA] Démarrage — experiment={args.experiment}  device={device}", flush=True)
     if device == "cuda" and not torch.cuda.is_available():
-        print("CUDA not available, falling back to CPU")
+        print("CUDA not available, falling back to CPU", flush=True)
         device = "cpu"
     dtype = getattr(torch, tc.dtype) if tc.dtype != "float32" else torch.float32
     ctx = torch.autocast(device_type=device.split(":")[0], dtype=dtype) \
@@ -159,13 +160,18 @@ def main():
     is_lara = model_cls == LARA
 
     # Data
+    print("[LARA] Chargement du dataset...", flush=True)
     train_loader, val_loader = get_dataloaders(tc)
     train_iter = iter(train_loader)
+    print("[LARA] Dataset OK.", flush=True)
 
     # Model
+    print("[LARA] Initialisation du modèle...", flush=True)
     model = model_cls(mc).to(device)
     if tc.compile and hasattr(torch, "compile"):
+        print("[LARA] Compilation torch.compile() en cours (2-5 min)...", flush=True)
         model = torch.compile(model)
+        print("[LARA] Compilation terminée.", flush=True)
 
     # Optimiser
     optimizer = torch.optim.AdamW(
@@ -182,13 +188,13 @@ def main():
             **vars(mc), **vars(tc)
         })
 
-    print(f"\n{'='*60}")
-    print(f"  Experiment : {args.experiment}")
-    print(f"  Model      : {model_cls.__name__}")
-    print(f"  Params     : {model.num_params():,}")
-    print(f"  Device     : {device}  |  dtype: {tc.dtype}")
-    print(f"  Max iters  : {tc.max_iters:,}")
-    print(f"{'='*60}\n")
+    print(f"\n{'='*60}", flush=True)
+    print(f"  Experiment : {args.experiment}", flush=True)
+    print(f"  Model      : {model_cls.__name__}", flush=True)
+    print(f"  Params     : {model.num_params():,}", flush=True)
+    print(f"  Device     : {device}  |  dtype: {tc.dtype}", flush=True)
+    print(f"  Max iters  : {tc.max_iters:,}", flush=True)
+    print(f"{'='*60}\n", flush=True)
 
     # ── Training loop ──────────────────────────────────────────
     t0 = time.time()
