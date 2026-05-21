@@ -72,6 +72,8 @@ def parse_args():
     p.add_argument("--n_recursions", type=int, default=None)
     p.add_argument("--learning_rate", type=float, default=None)
     p.add_argument("--warmup_iters", type=int, default=None)
+    p.add_argument("--resume", type=str, default=None,
+                   help="Path to checkpoint to resume from")
     return p.parse_args()
 
 
@@ -182,6 +184,19 @@ def main():
         weight_decay=tc.weight_decay,
     )
 
+    # Resume
+    start_iter = 0
+    best_val_loss = float("inf")
+    if args.resume:
+        print(f"[LARA] Reprise depuis {args.resume}...", flush=True)
+        ckpt = torch.load(args.resume, map_location=device)
+        raw_model = model.module if hasattr(model, "module") else model
+        raw_model.load_state_dict(ckpt["model_state"])
+        optimizer.load_state_dict(ckpt["optimizer"])
+        start_iter = ckpt["iter_num"] + 1
+        best_val_loss = ckpt["best_val_loss"]
+        print(f"[LARA] Reprise à iter {start_iter}  best_val_loss={best_val_loss:.4f}", flush=True)
+
     # W&B
     if tc.wandb_log:
         import wandb
@@ -199,10 +214,9 @@ def main():
 
     # ── Training loop ──────────────────────────────────────────
     t0 = time.time()
-    best_val_loss = float("inf")
     raw_model = model.module if hasattr(model, "module") else model
 
-    for iter_num in range(tc.max_iters + 1):
+    for iter_num in range(start_iter, tc.max_iters + 1):
         # LR update
         lr = get_lr(iter_num, tc)
         for pg in optimizer.param_groups:
