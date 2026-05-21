@@ -234,17 +234,19 @@ def main():
                 import wandb
                 wandb.log({"val/loss": val_loss, "val/ppl": ppl,
                            "lr": lr}, step=iter_num)
+            os.makedirs("checkpoints", exist_ok=True)
+            ckpt = {
+                "model_state":   raw_model.state_dict(),
+                "optimizer":     optimizer.state_dict(),
+                "iter_num":      iter_num,
+                "best_val_loss": best_val_loss,
+                "extra_cfg":     vars(mc),
+                "train_config":  vars(tc),
+            }
+            torch.save(ckpt, f"checkpoints/{tc.run_name}_last.pt")
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
-                ckpt = {
-                    "model_state":  raw_model.state_dict(),
-                    "optimizer":    optimizer.state_dict(),
-                    "iter_num":     iter_num,
-                    "best_val_loss": val_loss,
-                    "extra_cfg":    vars(mc),
-                    "train_config": vars(tc),
-                }
-                os.makedirs("checkpoints", exist_ok=True)
+                ckpt["best_val_loss"] = val_loss
                 torch.save(ckpt, f"checkpoints/{tc.run_name}_best.pt")
 
         if iter_num == tc.max_iters:
