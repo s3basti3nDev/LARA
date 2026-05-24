@@ -65,9 +65,14 @@ def _load_ckpt(path, device="cpu"):
         inferred["n_embd"]      = state["wte.weight"].shape[1]
         if "wpe.weight" in state:
             inferred["block_size"] = state["wpe.weight"].shape[0]
-        inferred["n_layer"]     = sum(
+        # MoRTransformer uses "transformer.layers.X", nn.ModuleList uses "transformer.X"
+        inferred["n_layer"] = sum(
             1 for k in state
             if k.startswith("transformer.layers.") and k.endswith(".ln1.weight")
+        ) or sum(
+            1 for k in state
+            if k.startswith("transformer.") and k.endswith(".ln1.weight")
+            and k.split(".")[1].isdigit()
         )
         # Infer n_head from MLA down_kv or DiffAttn q_proj shape
         if "transformer.layers.0.attn.down_kv.weight" in state:
