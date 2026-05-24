@@ -63,7 +63,8 @@ def _load_ckpt(path, device="cpu"):
     inferred = {}
     if state and "wte.weight" in state:
         inferred["n_embd"]      = state["wte.weight"].shape[1]
-        inferred["block_size"]  = state["wpe.weight"].shape[0]
+        if "wpe.weight" in state:
+            inferred["block_size"] = state["wpe.weight"].shape[0]
         inferred["n_layer"]     = sum(
             1 for k in state
             if k.startswith("transformer.layers.") and k.endswith(".ln1.weight")
