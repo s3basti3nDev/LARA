@@ -72,6 +72,8 @@ def parse_args():
     p.add_argument("--n_recursions", type=int, default=None)
     p.add_argument("--learning_rate", type=float, default=None)
     p.add_argument("--warmup_iters", type=int, default=None)
+    p.add_argument("--lr_decay_iters", type=int, default=None,
+                   help="Override lr_decay_iters (defaults to max_iters if not set)")
     p.add_argument("--resume", type=str, default=None,
                    help="Path to checkpoint to resume from")
     return p.parse_args()
@@ -149,6 +151,8 @@ def main():
     if args.n_recursions:  mc.n_recursions = args.n_recursions
     if args.learning_rate: tc.learning_rate = args.learning_rate
     if args.warmup_iters:  tc.warmup_iters = args.warmup_iters
+    if args.lr_decay_iters: tc.lr_decay_iters = args.lr_decay_iters
+    elif args.max_iters:    tc.lr_decay_iters = tc.max_iters
     grad_accum = args.grad_accum
 
     device = tc.device
