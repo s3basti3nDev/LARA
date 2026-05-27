@@ -160,8 +160,6 @@ def main():
         print("No checkpoints found. Run train_cpu.py or train_cpu_v2.py first.")
         sys.exit(1)
 
-    val_loader = _get_val_loader(dataset=args.dataset)
-
     print(f"\n{'='*80}")
     print(f"  LARA Evaluation Suite")
     print(f"{'='*80}")
@@ -177,9 +175,10 @@ def main():
             print(f"  [skip] {name}: {e}")
             continue
 
+        val_loader = _get_val_loader(block_size=mc.block_size, dataset=args.dataset)
         params = model.num_params()
         ppl = eval_perplexity(model, val_loader, args.n_batches)
-        tps = eval_throughput(model)
+        tps = eval_throughput(model, block_size=mc.block_size)
         kv  = kv_info(model)
         kv_str = f"{kv['compression_ratio']:.0f}x ({kv['type']})"
 
