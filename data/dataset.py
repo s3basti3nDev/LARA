@@ -153,11 +153,12 @@ def prepare_pile(data_dir: str = "data", max_train_tokens: int = 500_000_000):
         ids.append(eot)
         return ids
 
-    # Val set — split officiel (~10M tokens)
+    # Val set — premières docs du train shuffled (RedPajama n'a pas de split val)
     val_tokens_target = 10_000_000
     val_tokens_written = 0
-    print("Téléchargement SlimPajama (validation, ~10M tokens)...", flush=True)
-    val_ds = load_dataset("cerebras/SlimPajama-627B", split="validation", streaming=True)
+    print("Téléchargement RedPajama (validation, ~10M tokens)...", flush=True)
+    val_ds = load_dataset("togethercomputer/RedPajama-Data-1T-Sample", split="train",
+                          streaming=True).shuffle(seed=42, buffer_size=10_000)
     val_f = open(val_path, "wb")
     for doc in val_ds:
         ids = tokenize(doc)
@@ -167,10 +168,11 @@ def prepare_pile(data_dir: str = "data", max_train_tokens: int = 500_000_000):
             break
     val_f.close()
 
-    # Train set — streamed avec cap
+    # Train set — streamed avec cap (seed différente pour éviter le overlap val)
     lim = max_train_tokens if max_train_tokens else float("inf")
-    print(f"Téléchargement SlimPajama (train, cap={lim/1e6:.0f}M tokens)...", flush=True)
-    train_ds = load_dataset("cerebras/SlimPajama-627B", split="train", streaming=True)
+    print(f"Téléchargement RedPajama (train, cap={lim/1e6:.0f}M tokens)...", flush=True)
+    train_ds = load_dataset("togethercomputer/RedPajama-Data-1T-Sample", split="train",
+                            streaming=True).shuffle(seed=1337, buffer_size=10_000)
     train_tokens_written = 0
     train_f = open(train_path, "wb")
     for doc in train_ds:
