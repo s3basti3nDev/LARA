@@ -123,6 +123,72 @@ def prepare_fineweb(data_dir: str = "data", sample: str = "sample-10BT",
 
 
 # ──────────────────────────────────────────────────────────────
+# The Pile (EleutherAI — diverse corpus, same distribution as Pythia)
+# ──────────────────────────────────────────────────────────────
+
+def prepare_pile(data_dir: str = "data", max_train_tokens: int = 500_000_000):
+    """
+    Stream The Pile from HuggingFace and tokenize.
+    Uses the official validation split for val set.
+    Requires: pip install datasets tiktoken
+    """
+    os.makedirs(data_dir, exist_ok=True)
+    suffix = f"_{max_train_tokens//1_000_000}M" if max_train_tokens else "_full"
+    train_path = os.path.join(data_dir, f"pile{suffix}_train.bin")
+    val_path   = os.path.join(data_dir, f"pile{suffix}_val.bin")
+
+    if os.path.exists(train_path) and os.path.exists(val_path):
+        print(f"The Pile déjà préparé ({os.path.getsize(train_path)//1_000_000}MB train).")
+        return train_path, val_path
+
+    from datasets import load_dataset
+    import tiktoken
+
+    enc = tiktoken.get_encoding("gpt2")
+    eot = enc._special_tokens["<|endoftext|>"]
+
+    def tokenize(example):
+        ids = enc.encode_ordinary(example["text"])
+        ids.append(eot)
+        return ids
+
+    # Val set — official validation split (~1M docs, on prend 10M tokens)
+    val_tokens_target = 10_000_000
+    val_tokens_written = 0
+    print("Téléchargement The Pile (validation split, ~10M tokens)...", flush=True)
+    val_ds = load_dataset("EleutherAI/pile", split="validation", streaming=True,
+                          trust_remote_code=True)
+    val_f = open(val_path, "wb")
+    for doc in val_ds:
+        ids = tokenize(doc)
+        np.array(ids, dtype=np.uint16).tofile(val_f)
+        val_tokens_written += len(ids)
+        if val_tokens_written >= val_tokens_target:
+            break
+    val_f.close()
+
+    # Train set — streamed avec cap
+    lim = max_train_tokens if max_train_tokens else float("inf")
+    print(f"Téléchargement The Pile (train, cap={lim/1e6:.0f}M tokens)...", flush=True)
+    train_ds = load_dataset("EleutherAI/pile", split="train", streaming=True,
+                            trust_remote_code=True)
+    train_tokens_written = 0
+    train_f = open(train_path, "wb")
+    for doc in train_ds:
+        ids = tokenize(doc)
+        np.array(ids, dtype=np.uint16).tofile(train_f)
+        train_tokens_written += len(ids)
+        if train_tokens_written % 50_000_000 == 0 and train_tokens_written > 0:
+            print(f"  {train_tokens_written/1e6:.0f}M train tokens written...", flush=True)
+        if train_tokens_written >= lim:
+            break
+    train_f.close()
+
+    print(f"  train: {train_tokens_written/1e6:.0f}M tokens  |  val: {val_tokens_written/1e6:.1f}M tokens")
+    return train_path, val_path
+
+
+# ──────────────────────────────────────────────────────────────
 # Generic binary token dataset
 # ──────────────────────────────────────────────────────────────
 
@@ -152,6 +218,8 @@ def get_dataloaders(config, num_workers: int = 0):
         train_bin, val_bin = prepare_shakespeare(config.data_dir)
     elif config.dataset == "fineweb":
         train_bin, val_bin = prepare_fineweb(config.data_dir)
+    elif config.dataset == "pile":
+        train_bin, val_bin = prepare_pile(config.data_dir)
     elif config.dataset == "local":
         import importlib.util, sys as _sys
         spec = importlib.util.spec_from_file_location(
