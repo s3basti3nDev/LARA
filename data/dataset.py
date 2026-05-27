@@ -123,13 +123,14 @@ def prepare_fineweb(data_dir: str = "data", sample: str = "sample-10BT",
 
 
 # ──────────────────────────────────────────────────────────────
-# The Pile (EleutherAI — diverse corpus, same distribution as Pythia)
+# SlimPajama (Cerebras — corpus diversifié : web, livres, code,
+# arxiv, Wikipedia, StackExchange — même diversité que The Pile)
 # ──────────────────────────────────────────────────────────────
 
 def prepare_pile(data_dir: str = "data", max_train_tokens: int = 500_000_000):
     """
-    Stream The Pile from HuggingFace and tokenize.
-    Uses the official validation split for val set.
+    Stream SlimPajama-627B from HuggingFace and tokenize.
+    Diverse corpus (web, books, code, arxiv, Wikipedia, StackExchange).
     Requires: pip install datasets tiktoken
     """
     os.makedirs(data_dir, exist_ok=True)
@@ -138,7 +139,7 @@ def prepare_pile(data_dir: str = "data", max_train_tokens: int = 500_000_000):
     val_path   = os.path.join(data_dir, f"pile{suffix}_val.bin")
 
     if os.path.exists(train_path) and os.path.exists(val_path):
-        print(f"The Pile déjà préparé ({os.path.getsize(train_path)//1_000_000}MB train).")
+        print(f"SlimPajama déjà préparé ({os.path.getsize(train_path)//1_000_000}MB train).")
         return train_path, val_path
 
     from datasets import load_dataset
@@ -152,12 +153,11 @@ def prepare_pile(data_dir: str = "data", max_train_tokens: int = 500_000_000):
         ids.append(eot)
         return ids
 
-    # Val set — official validation split (~1M docs, on prend 10M tokens)
+    # Val set — split officiel (~10M tokens)
     val_tokens_target = 10_000_000
     val_tokens_written = 0
-    print("Téléchargement The Pile (validation split, ~10M tokens)...", flush=True)
-    val_ds = load_dataset("EleutherAI/pile", split="validation", streaming=True,
-                          trust_remote_code=True)
+    print("Téléchargement SlimPajama (validation, ~10M tokens)...", flush=True)
+    val_ds = load_dataset("cerebras/SlimPajama-627B", split="validation", streaming=True)
     val_f = open(val_path, "wb")
     for doc in val_ds:
         ids = tokenize(doc)
@@ -169,9 +169,8 @@ def prepare_pile(data_dir: str = "data", max_train_tokens: int = 500_000_000):
 
     # Train set — streamed avec cap
     lim = max_train_tokens if max_train_tokens else float("inf")
-    print(f"Téléchargement The Pile (train, cap={lim/1e6:.0f}M tokens)...", flush=True)
-    train_ds = load_dataset("EleutherAI/pile", split="train", streaming=True,
-                            trust_remote_code=True)
+    print(f"Téléchargement SlimPajama (train, cap={lim/1e6:.0f}M tokens)...", flush=True)
+    train_ds = load_dataset("cerebras/SlimPajama-627B", split="train", streaming=True)
     train_tokens_written = 0
     train_f = open(train_path, "wb")
     for doc in train_ds:
