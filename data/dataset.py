@@ -129,8 +129,8 @@ def prepare_fineweb(data_dir: str = "data", sample: str = "sample-10BT",
 
 def prepare_pile(data_dir: str = "data", max_train_tokens: int = 500_000_000):
     """
-    Stream SlimPajama-627B from HuggingFace and tokenize.
-    Diverse corpus (web, books, code, arxiv, Wikipedia, StackExchange).
+    Stream allenai/c4 (English) from HuggingFace and tokenize.
+    Diverse web corpus (CommonCrawl filtered), Apache 2.0.
     Requires: pip install datasets tiktoken
     """
     os.makedirs(data_dir, exist_ok=True)
@@ -139,7 +139,7 @@ def prepare_pile(data_dir: str = "data", max_train_tokens: int = 500_000_000):
     val_path   = os.path.join(data_dir, f"pile{suffix}_val.bin")
 
     if os.path.exists(train_path) and os.path.exists(val_path):
-        print(f"SlimPajama déjà préparé ({os.path.getsize(train_path)//1_000_000}MB train).")
+        print(f"C4 déjà préparé ({os.path.getsize(train_path)//1_000_000}MB train).")
         return train_path, val_path
 
     from datasets import load_dataset
@@ -153,12 +153,11 @@ def prepare_pile(data_dir: str = "data", max_train_tokens: int = 500_000_000):
         ids.append(eot)
         return ids
 
-    # Val set — premières docs du train shuffled (RedPajama n'a pas de split val)
+    # Val set — split officiel C4
     val_tokens_target = 10_000_000
     val_tokens_written = 0
-    print("Téléchargement RedPajama (validation, ~10M tokens)...", flush=True)
-    val_ds = load_dataset("togethercomputer/RedPajama-Data-1T-Sample", split="train",
-                          streaming=True).shuffle(seed=42, buffer_size=10_000)
+    print("Téléchargement C4 (validation, ~10M tokens)...", flush=True)
+    val_ds = load_dataset("allenai/c4", "en", split="validation", streaming=True)
     val_f = open(val_path, "wb")
     for doc in val_ds:
         ids = tokenize(doc)
@@ -168,11 +167,10 @@ def prepare_pile(data_dir: str = "data", max_train_tokens: int = 500_000_000):
             break
     val_f.close()
 
-    # Train set — streamed avec cap (seed différente pour éviter le overlap val)
+    # Train set — streamed avec cap
     lim = max_train_tokens if max_train_tokens else float("inf")
-    print(f"Téléchargement RedPajama (train, cap={lim/1e6:.0f}M tokens)...", flush=True)
-    train_ds = load_dataset("togethercomputer/RedPajama-Data-1T-Sample", split="train",
-                            streaming=True).shuffle(seed=1337, buffer_size=10_000)
+    print(f"Téléchargement C4 (train, cap={lim/1e6:.0f}M tokens)...", flush=True)
+    train_ds = load_dataset("allenai/c4", "en", split="train", streaming=True)
     train_tokens_written = 0
     train_f = open(train_path, "wb")
     for doc in train_ds:
