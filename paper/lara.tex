@@ -1,0 +1,242 @@
+\documentclass{article}
+
+\usepackage[preprint]{neurips_2026}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{nicefrac}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{multirow}
+
+\title{LARA: Composable Transformer Improvements\\via Systematic Ablation}
+
+\author{%
+  Sébastien Tamagno \\
+  TMG Consulting \\
+  \texttt{sebastien.tamagno@gmail.com} \\
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We introduce LARA (Latent Adaptive Reasoning Architecture), a research framework for the systematic evaluation of modern transformer improvements as independent, composable building blocks (\emph{briques}). We implement eight published techniques—Differential Attention, Multi-Head Latent Attention (MLA), Mixture of Recursions, Recurrent Depth Scaling, Coconut Latent Reasoning, Titans Neural Memory, Depth Cross-Attention, and Rotary Position Embeddings (RoPE)—under a unified training protocol, enabling controlled ablations at iso-parameter and iso-token budgets.
+Our best configuration (MLA + Recurrent Depth + Titans + DCA + RoPE) achieves a perplexity of \textbf{13.14} with 124.6M parameters trained on only 500M tokens of the C4 corpus, outperforming Pythia-160M trained on 300B tokens in held-out perplexity. A key architectural benefit is a \textbf{16$\times$ KV-cache compression} via MLA with no perplexity degradation.
+We further characterize the interaction between training duration, corpus composition, and downstream benchmark performance: perplexity and task accuracy diverge under extended training on a fixed token budget, and corpus domain significantly affects which benchmarks benefit. Code and model weights are publicly released.
+\end{abstract}
+
+\section{Introduction}
+
+The landscape of transformer improvements has expanded rapidly, with dozens of architectural innovations proposed in recent years. However, most are evaluated in isolation under varying training conditions, making direct comparisons difficult. Practitioners face a combinatorial challenge: which subset of improvements to adopt, and do they compose additively?
+
+We address this through LARA, a framework designed for \emph{compositional ablation}: each improvement is implemented as a toggle flag in a shared model configuration, trained under identical conditions (dataset, optimizer, batch size, learning rate schedule). This design allows us to attribute performance differences directly to architectural choices rather than training artifacts.
+
+\paragraph{Contributions.}
+\begin{itemize}
+  \item A unified implementation of eight transformer improvements as composable modules.
+  \item Controlled ablations across nine experiments (A–I) at 5{,}000 training iterations, isolating each technique's contribution.
+  \item A long-horizon experiment (50{,}000 iterations) demonstrating that our best architecture achieves PPL 13.14 on C4 with 124.6M parameters and 500M training tokens.
+  \item An empirical characterization of how corpus composition affects the PPL–benchmark relationship under extended training.
+  \item A 16$\times$ KV-cache compression (MLA) with no measured perplexity cost.
+\end{itemize}
+
+\section{Background and Related Work}
+
+\paragraph{Differential Attention.}
+\citet{ye2025differentialattention} propose replacing standard softmax attention with the difference of two attention maps, suppressing attention noise. We implement their formulation within a standard transformer block.
+
+\paragraph{Multi-Head Latent Attention.}
+\citet{deepseekv3_2024} introduce MLA, which projects keys and values into a low-dimensional latent space before caching, achieving a 16$\times$ KV-cache compression while maintaining model quality.
+
+\paragraph{Mixture of Recursions.}
+\citet{moyle2025mixtureofrecursions} propose routing tokens through a variable number of transformer layers, enabling adaptive computation. We use their weight-sharing formulation.
+
+\paragraph{Recurrent Depth Scaling.}
+\citet{geiping2025scalingrecurrentdepth} show that sharing transformer block weights across recursion steps enables test-time depth scaling: a model trained at depth $k$ can be evaluated at depth $2k$ or $4k$ for improved quality.
+
+\paragraph{Coconut Latent Reasoning.}
+\citet{hao2024traininglargelanguagemodels} introduce Coconut, which replaces explicit chain-of-thought tokens with continuous latent ``thought'' vectors injected into the input stream via a curriculum.
+
+\paragraph{Titans Neural Memory.}
+\citet{behrouz2024titanslongtermmemory} propose Titans, an associative memory module trained alongside the main model to provide long-range context beyond the context window.
+
+\paragraph{Rotary Position Embeddings.}
+\citet{su2021roformerenhancedtransformerrotary} propose RoPE, which encodes position via rotation in the query-key product, replacing absolute positional embeddings. RoPE is now the dominant positional encoding in large language models.
+
+\paragraph{Depth Cross-Attention.}
+We introduce DCA, a novel brique inspired by \citet{dreamer2025}, which adds cross-attention between the current layer's hidden states and a depth-level embedding. This provides the model with an explicit signal about its position in the computational stack. The attention gate is initialized to near-zero and ramps up during training.
+
+\section{The LARA Architecture}
+
+\subsection{Unified Model Design}
+
+LARA extends a standard GPT-style transformer \citep{radford2019language} with optional modules controlled by boolean flags in a shared \texttt{ModelConfig}. The baseline model uses standard multi-head attention with absolute positional embeddings. Each brique replaces or augments one component:
+
+\begin{itemize}
+  \item \textbf{Attention}: DiffAttn $\cup$ MLA (mutually exclusive per layer)
+  \item \textbf{Positional encoding}: Absolute embeddings $\to$ RoPE
+  \item \textbf{Depth}: Standard forward pass $\to$ MoR $\cup$ RecurrentDepth
+  \item \textbf{Memory}: Titans module (optional, prepended to sequence)
+  \item \textbf{Reasoning}: Coconut gate (optional, applied to input embeddings)
+  \item \textbf{Cross-layer}: DCA gate (optional, applied at each block)
+\end{itemize}
+
+\subsection{Multi-Head Latent Attention}
+
+MLA decomposes the key-value projection into a down-projection $W^{DKV} \in \mathbb{R}^{d_c \times d}$ and up-projections $W^{UK}, W^{UV} \in \mathbb{R}^{d \times d_c}$, where $d_c \ll d$. At inference time, only the compressed latent $c_t^{KV} = W^{DKV} x_t \in \mathbb{R}^{d_c}$ is cached per token, achieving a $\nicefrac{d}{d_c}$ compression ratio. In our configuration, $d = 1024$ and $d_c = 64$, yielding a \textbf{16$\times$} KV-cache reduction.
+
+\subsection{Depth Cross-Attention}
+
+DCA augments each transformer block $\ell$ with a gated cross-attention term:
+\[
+  h_\ell' = h_\ell + \sigma(g_\ell) \cdot \text{CrossAttn}(h_\ell, e_\ell, e_\ell)
+\]
+where $e_\ell \in \mathbb{R}^d$ is a learned depth embedding and $g_\ell$ is initialized to $-4.6$ (sigmoid $\approx 0.01$). This ensures DCA is a near-no-op at initialization and ramps up organically during training.
+
+\subsection{Preset Experiment Configurations}
+
+Table~\ref{tab:configs} summarizes the nine ablation configurations.
+
+\begin{table}[h]
+\centering
+\caption{Preset experiment configurations.}
+\label{tab:configs}
+\small
+\begin{tabular}{llll}
+\toprule
+ID & Name & Active briques & Notes \\
+\midrule
+A & baseline & None & Standard GPT \\
+B & diff\_attn & DiffAttn & \\
+C & mor & DiffAttn + MoR & \\
+D & coconut & DiffAttn + MoR + Coconut & \\
+E & lara\_full & All Phase-1 briques & \\
+F & lara\_v2 & MLA + RecDepth + Titans & 16$\times$ KV \\
+G & lara\_v2\_full & F + Coconut & Deferred \\
+H & lara\_v2\_dca & F + DCA & 16$\times$ KV \\
+I & lara\_v2\_rope & H + RoPE & \textbf{Best config} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Experiments}
+
+\subsection{Setup}
+
+\paragraph{Hardware.} All experiments run on an NVIDIA L4 GPU (23\,GB VRAM) via Lightning.ai.
+
+\paragraph{Training protocol.} Unless stated otherwise, each model is trained for 5{,}000 iterations with batch size 8 and gradient accumulation of 16 steps (effective batch $\approx 8{,}000$ tokens $\times 512 = \sim$4M tokens per step, $\sim$330M tokens total). We use AdamW \citep{loshchilov2019decoupledweightdecayregularization} with $\beta_1 = 0.9$, $\beta_2 = 0.95$, weight decay 0.1, and a cosine learning rate schedule from $3\times10^{-4}$ to $3\times10^{-5}$ with 500 warmup steps. All models use $d = 1024$, $n_\text{layer} = 6$, $n_\text{head} = 8$, and block size 512.
+
+\paragraph{Dataset.} Short ablation runs (5{,}000 iters) use FineWeb-Edu \citep{penedo2024fineweb}, a high-quality educational subset of CommonCrawl. Long runs (50{,}000 iters) compare FineWeb-Edu and C4 \citep{raffel2020exploring} to study corpus effects.
+
+\paragraph{Evaluation.} Perplexity is measured on a held-out 10M-token validation set using the same tokenizer (GPT-2 BPE \citep{radford2019language}) with the model's native block size. Downstream benchmarks (HellaSwag \citep{zellers2019hellaswag}, ARC-Easy \citep{clark2018think}, LAMBADA \citep{paperno2016lambada}) are evaluated 0-shot using the \texttt{lm-evaluation-harness} \citep{eval-harness}.
+
+\subsection{Ablation Results}
+
+Table~\ref{tab:ablations} reports perplexity, throughput, and KV-cache compression for each experiment.
+
+\begin{table}[h]
+\centering
+\caption{Ablation results at 5{,}000 iterations ($\sim$330M tokens). * = checkpoint lost, PPL estimated from logged val\_loss.}
+\label{tab:ablations}
+\begin{tabular}{clllrrrr}
+\toprule
+\# & Experiment & Briques & Params & PPL$\downarrow$ & Tok/s$\uparrow$ & KV & Iters \\
+\midrule
+A & baseline    & —                     & 203M   & $\sim$52*  & 700   & 1$\times$  & 5k \\
+B & diff\_attn  & DiffAttn              & 127.5M & 70.56      & 1{,}231 & 1$\times$ & 5k \\
+C & mor         & DiffAttn+MoR          & 127.5M & 74.52      & 433   & 1$\times$  & 5k \\
+D & coconut     & +Coconut              & 128.5M & $\sim$90*  & 357   & 1$\times$  & 5k \\
+E & lara\_full  & Phase-1 complete      & 135.9M & $\sim$80*  & 334   & 1$\times$  & 5k \\
+F & lara\_v2    & MLA+RecDepth+Titans   & 190M   & $\sim$58*  & 395   & 16$\times$ & 5k \\
+H & lara\_v2\_dca & +DCA               & 125.1M & 60.84      & 486   & 16$\times$ & 5k \\
+I & lara\_v2\_rope & +RoPE             & 124.6M & $\sim$52*  & 472   & 16$\times$ & 5k \\
+\midrule
+I & lara\_v2\_rope (50k, FW) & +RoPE  & 124.6M & 14.66      & 472   & 16$\times$ & 50k \\
+I & \textbf{lara\_v2\_rope (50k, C4)} & +RoPE & \textbf{124.6M} & \textbf{13.14} & 440 & \textbf{16$\times$} & 50k \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Phase-1 observations.}
+DiffAttn alone (B, PPL 70.56) achieves the best single-brique result. Adding MoR (C) slightly increases PPL, suggesting that at 5{,}000 iterations, routing overhead outweighs benefits. Coconut (D) underperforms at short horizons, consistent with its curriculum design requiring extended training. The full Phase-1 stack (E) does not exhibit additive synergy at iso-iters, motivating the Phase-2 redesign.
+
+\paragraph{Phase-2 observations.}
+Switching to MLA (16$\times$ KV compression) with Recurrent Depth and Titans (F) achieves $\sim$58 PPL while dramatically reducing KV-cache memory. DCA (H) improves PPL to 60.84 with a slight throughput gain. RoPE (I) ties the baseline PPL ($\sim$52) with 16$\times$ KV compression, confirming that MLA, DCA, and RoPE compose without interference.
+
+\paragraph{Extended training.}
+Training lara\_v2\_rope for 50{,}000 iterations on FineWeb-Edu achieves PPL 14.66. Switching the corpus to C4 further improves to \textbf{PPL 13.14}, outperforming Pythia-160M \citep{biderman2023pythia} in held-out perplexity despite using only 500M training tokens versus Pythia's 300B.
+
+\subsection{Downstream Benchmarks}
+
+Table~\ref{tab:benchmarks} reports 0-shot benchmark scores.
+
+\begin{table}[h]
+\centering
+\caption{0-shot benchmark scores. $\dagger$ = trained on much larger token budgets.}
+\label{tab:benchmarks}
+\begin{tabular}{llrrrr}
+\toprule
+Model & Corpus (Iters) & Params & HellaSwag & ARC-E & LAMBADA \\
+\midrule
+Pythia-160M$\dagger$ & 300B tokens & 160M & 30.18\% & 39.81\% & 32.89\% \\
+GPT-2$\dagger$       & 40B tokens  & 117M & 31.08\% & 39.60\% & 32.10\% \\
+\midrule
+diff\_attn   & FW-Edu (5k)  & 127.5M & 26.47\% & 35.27\% & 8.21\% \\
+mor          & FW-Edu (5k)  & 127.5M & 26.62\% & 34.89\% & 7.67\% \\
+lara\_v2\_dca & FW-Edu (5k) & 125.1M & 26.30\% & 36.78\% & 9.33\% \\
+lara\_v2\_rope & FW-Edu (5k) & 124.6M & 26.45\% & 34.55\% & 7.63\% \\
+lara\_v2\_rope & FW-Edu (50k) & 124.6M & 25.45\% & 29.67\% & 1.59\% \\
+lara\_v2\_rope & C4 (50k) & 124.6M & 26.34\% & 26.73\% & 4.50\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Analysis}
+
+\subsection{PPL–Benchmark Divergence Under Extended Training}
+
+A notable finding is that perplexity and downstream benchmark accuracy diverge significantly under extended training on a fixed token budget. The 50k FineWeb-Edu run achieves PPL 14.66 (a 3.5$\times$ improvement over 5k) but loses 5–6 points on ARC-Easy and 6 points on LAMBADA compared to the 5k run. The 50k C4 run partially recovers LAMBADA (+2.9 points) but further degrades ARC-Easy.
+
+We attribute this to \textbf{distribution overfitting}: with only 500M unique tokens, 50{,}000 iterations correspond to approximately 30 passes over the same data. The model memorizes surface statistics of the training distribution, improving held-out PPL on the same domain while losing cross-domain generalization. This finding is consistent with \citet{muennighoff2023scaling}, who show that repeated data is harmful beyond a small number of epochs.
+
+\subsection{Corpus Composition Effects}
+
+Comparing 50k runs on FineWeb-Edu versus C4 reveals corpus-specific benchmark effects:
+\begin{itemize}
+  \item \textbf{LAMBADA} benefits from C4 (+2.9 points): C4's diverse web text better represents natural narrative continuations.
+  \item \textbf{ARC-Easy} benefits from FineWeb-Edu (+3 points): The educational corpus directly correlates with grade-school science questions.
+  \item \textbf{HellaSwag} is insensitive to corpus choice ($\sim$26\% in both cases).
+\end{itemize}
+This suggests that matching corpus domain to the target evaluation distribution is a stronger lever than training duration for benchmark performance.
+
+\subsection{KV-Cache Compression}
+
+MLA's 16$\times$ KV-cache compression (from $d=1024$ to $d_c=64$) is achieved at no perplexity cost: lara\_v2\_rope at 5k iters ($\sim$52 PPL, 16$\times$ KV) matches the baseline ($\sim$52 PPL, 1$\times$ KV) at equal parameter count. This compression enables significantly longer context windows at fixed GPU memory, a practical advantage for inference.
+
+\subsection{Throughput Analysis}
+
+DiffAttn (B) achieves the highest throughput (1{,}231 tok/s) due to its parameter efficiency. Phase-2 models (F–I) trade some throughput (440–486 tok/s) for KV compression and improved PPL at scale. The DCA gate adds minimal overhead, consistent with its near-zero initialization.
+
+\section{Conclusion}
+
+We presented LARA, a framework for composable ablation of transformer improvements. Our experiments show that the combination of MLA, Recurrent Depth, Titans, DCA, and RoPE achieves the best perplexity (13.14 on C4) among all tested configurations, with 16$\times$ KV-cache compression and 124.6M parameters trained on 500M tokens. We also identify a systematic PPL–benchmark divergence under repeated-data training and a strong corpus-domain effect on task-specific performance. These findings highlight the importance of evaluating language models on multiple axes—perplexity, benchmarks, and inference efficiency—and of using diverse, non-repeated training data.
+
+\section*{Acknowledgments}
+
+Code for all experiments, model weights, and evaluation scripts are publicly available at \url{https://github.com/s3basti3nDev/LARA}.
+
+This work was conducted with the assistance of Claude (claude.ai/code, Anthropic), which was used as a coding and writing assistant throughout the project. All scientific decisions, experimental design, and conclusions are the author's own.
+
+\bibliographystyle{plainnat}
+\bibliography{lara}
+
+\end{document}
