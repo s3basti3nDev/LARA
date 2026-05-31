@@ -103,21 +103,48 @@ Each brique is independently toggled in `ModelConfig` (defined in [config.py](co
 - Fallback: detects old-format `fineweb_sample-10BT_train.bin` (Lightning.ai persistent disk).
 - Checkpoints saved to `checkpoints/`.
 
-## Ablation Results (mai 2026)
+## Ablation Results (mai 2026) — COMPLETS
 
-| # | Experiment | Briques | Params | Val PPL | Tok/s | KV cache | Iters | Statut |
-|---|-----------|---------|--------|---------|-------|----------|-------|--------|
-| A | baseline | — | 203M | **59.98** | 700 | 1x | 5000 | ✅ |
-| B | diff_attn | DiffAttn | 127M | — | — | 1x | 5000 | 🔄 en cours |
-| C | mor | DiffAttn+MoR | — | — | — | — | — | ❌ |
-| D | coconut | +Coconut | — | — | — | — | — | ❌ |
-| E | lara_full | Phase 1 complète | — | — | — | — | — | ❌ |
-| F | lara_v2 | MLA+RD+Titans | 190M | 64.62 | 395 | 16x | 5000 | ✅ |
-| G | lara_v2_full | +Coconut | — | — | — | — | — | ❌ |
-| H | lara_v2_dca | +DCA | 125M | **64.88** | 389 | 16x | 5000 | ✅ |
-| I | lara_v2_rope | +RoPE | — | — | — | — | — | ❌ |
+PPL mesuré avec evaluate.py (block_size=512, fidèle à l'entraînement).
 
-**Résultat clé** : DCA (H) atteint PPL 64.88 avec 65M params de moins que lara_v2 (F) — validation de la brique DCA.
+| # | Experiment | Corpus | Briques | Params | Val PPL | Tok/s | KV cache | Iters | Statut |
+|---|-----------|--------|---------|--------|---------|-------|----------|-------|--------|
+| A | baseline | FineWeb | — | 203M | ~52* | 700 | 1x | 5000 | ✅ |
+| B | diff_attn | FineWeb | DiffAttn | 127.5M | 70.56 | 1,231 | 1x | 5000 | ✅ |
+| C | mor | FineWeb | DiffAttn+MoR | 127.5M | 74.52 | 433 | 1x | 5000 | ✅ |
+| D | coconut | FineWeb | DiffAttn+MoR+Coconut | 128.5M | ~90* | 357 | 1x | 5000 | ✅ |
+| E | lara_full | FineWeb | Phase 1 complète | 135.9M | ~80* | 334 | 1x | 5000 | ✅ |
+| F | lara_v2 | FineWeb | MLA+RD+Titans | 190M | ~58* | 395 | 16x | 5000 | ✅ |
+| G | lara_v2_full | — | +Coconut | — | — | — | — | — | ⏭ skipped |
+| H | lara_v2_dca | FineWeb | +DCA | 125.1M | 60.84 | 486 | 16x | 5000 | ✅ |
+| I | lara_v2_rope (5k) | FineWeb | +DCA+RoPE | 124.6M | ~52* | 472 | 16x | 5000 | ✅ |
+| I | lara_v2_rope (50k FW) | FineWeb | +DCA+RoPE | 124.6M | 14.66 | 472 | 16x | 50000 | ✅ |
+| I | lara_v2_rope (50k C4) | C4 | +DCA+RoPE | 124.6M | **13.14** | 440 | 16x | 50000 | ✅ |
+
+*checkpoints perdus — PPL estimé depuis val_loss enregistré durant l'entraînement
+
+**Résultat clé** : lara_v2_rope (50k C4) atteint PPL **13.14** avec 124.6M params, 16x compression KV, 500M tokens sur corpus C4 diversifié.
+
+**Bug corrigé** : evaluate.py utilisait block_size=128 au lieu du block_size du modèle (512) — tous les anciens PPL étaient surestimés. Valeurs corrigées disponibles pour B, C, H, I.
+
+**Observations Phase 1** : DiffAttn seul domine (70.56). MoR dégrade légèrement (74.52). Coconut nécessite >5k iters. lara_full ne bénéficie pas de synergie à iso-iters.
+
+**Note evaluate.py** : le fix (block_size=mc.block_size) est dans evaluate.py depuis le 27 mai 2026.
+
+## Benchmarks lm_eval (0-shot)
+
+| Model | Params | Corpus | Iters | hellaswag | arc_easy | lambada |
+|-------|--------|--------|-------|-----------|----------|---------|
+| pythia-160m | 160M | 300B tokens | — | 30.18% | 39.81% | 32.89% |
+| gpt2 | 117M | 40B tokens | — | 31.08% | 39.60% | 32.10% |
+| diff_attn | 127.5M | FineWeb 500M | 5k | 26.47% | 35.27% | 8.21% |
+| mor | 127.5M | FineWeb 500M | 5k | 26.62% | 34.89% | 7.67% |
+| lara_v2_dca | 125.1M | FineWeb 500M | 5k | 26.30% | 36.78% | 9.33% |
+| lara_v2_rope | 124.6M | FineWeb 500M | 5k | 26.45% | 34.55% | 7.63% |
+| lara_v2_rope | 124.6M | FineWeb 500M | 50k | 25.45% | 29.67% | 1.59% |
+| lara_v2_rope | 124.6M | C4 500M | 50k | 26.34% | 26.73% | **4.50%** |
+
+**Observation corpus** : PPL et benchmarks divergent après sur-entraînement (50k iters sur 500M tokens = ~30 passes). FineWeb-Edu aide arc_easy (contenu éducatif corrélé aux questions de science) ; C4 aide lambada (texte web naturel). La solution pour les benchmarks est plus de tokens uniques, pas plus d'iters.
 
 ## Infrastructure
 
